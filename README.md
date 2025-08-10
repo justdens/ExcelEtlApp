@@ -19,10 +19,10 @@ Add-Migration InitTRXandNPP
 Update-Database
 ```
 
-Important note:
-EF Core migrations do not automatically create database views.
-You must manually execute the SQL queries that create the required views on your PostgreSQL database.
-These view definitions, including the CREATE OR REPLACE VIEW ticket_size statement, are provided in the `SQL/init.sql` file.
+> **Important:**  
+> EF Core migrations do **not** automatically create database views.  
+> You **must manually execute** the SQL queries that create the required views on your PostgreSQL database.  
+> These view definitions, including the `CREATE OR REPLACE VIEW ticket_size` statement, are provided in the `SQL/init.sql` file.
 
 ## Run
 - Start the app (F5) → open `/Upload` to upload Excel (put sample in `wwwroot/data.xlsx` or use upload UI).
