@@ -19,7 +19,9 @@ Add-Migration InitTRXandNPP
 Update-Database
 ```
 
-Or run `SQL/init.sql` directly.
+Important note:
+After running the EF Core migrations, you must manually execute the SQL queries that create database views found in the SQL/init.sql file on your PostgreSQL database.
+EF Core migrations do not automatically create views, so this step is necessary to ensure all views used by the application are available.
 
 ## Run
 - Start the app (F5) → open `/Upload` to upload Excel (put sample in `wwwroot/data.xlsx` or use upload UI).
