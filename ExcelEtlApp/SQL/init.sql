@@ -37,4 +37,4 @@ FROM (SELECT trx.lokasi_id,
                            sum(npp.npp) AS npp
                     FROM npp
                     GROUP BY npp.lokasi_id, npp.bulan) n ON t.lokasi_id = n.lokasi_id AND t.bulan = n.bulan
-         JOIN lokasi l ON l.id = t.lokasi_id
+         JOIN lokasi l ON l.id = t.lokasi_id;
