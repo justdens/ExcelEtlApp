@@ -20,8 +20,9 @@ Update-Database
 ```
 
 Important note:
-After running the EF Core migrations, you must manually execute the SQL queries that create database views found in the SQL/init.sql file on your PostgreSQL database.
-EF Core migrations do not automatically create views, so this step is necessary to ensure all views used by the application are available.
+EF Core migrations do not automatically create database views.
+You must manually execute the SQL queries that create the required views on your PostgreSQL database.
+These view definitions, including the CREATE OR REPLACE VIEW ticket_size statement, are provided in the `SQL/init.sql` file.
 
 ## Run
 - Start the app (F5) → open `/Upload` to upload Excel (put sample in `wwwroot/data.xlsx` or use upload UI).
