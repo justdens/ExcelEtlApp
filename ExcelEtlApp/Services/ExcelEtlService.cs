@@ -15,7 +15,7 @@ namespace ExcelEtlApp.Services
         {
             _db = db;
             _logger = logger;
-            // EPPlus license must be set in Program.cs before this service is used.
+            
         }
 
         public async Task<EtlResult> RunEtlAsync(string filePath)
@@ -30,76 +30,76 @@ namespace ExcelEtlApp.Services
             using var package = new ExcelPackage(new FileInfo(filePath));
             var workbook = package.Workbook;
 
-            // 1. Parse lokasi sheet (sheet name: Lokasi)
-            var lokasiSheet = workbook.Worksheets.FirstOrDefault(ws => string.Equals(ws.Name, "16", StringComparison.OrdinalIgnoreCase));
-            if (lokasiSheet != null)
+            // 1. Import Lokasi dari sheet TRX (kolom A & B)
+            var trxSheet = workbook.Worksheets.FirstOrDefault(ws => ws.Name.Trim() == "16");
+            if (trxSheet != null)
             {
-                await ImportLokasi(lokasiSheet);
+                await ImportLokasi(trxSheet);
             }
             else
             {
-                _logger.LogWarning("Sheet 'Lokasi' not found; lokasi lookup may fail.");
+                result.Warnings.Add("Sheet '16' untuk TRX tidak ditemukan.");
             }
 
-            // 2. Parse TRX sheet (sheet name: TRX)
-            var trxSheet = workbook.Worksheets.FirstOrDefault(ws => string.Equals(ws.Name, "16", StringComparison.OrdinalIgnoreCase));
+            // 2. Proses TRX
             if (trxSheet != null)
             {
                 var trxRows = ReadSheetForValues(trxSheet);
+                var trxList = new List<TRX>();
+
                 foreach (var r in trxRows)
                 {
-                    // r.Location may be a lokasi name or id; try map to id
-                    int idx = r.Location.Contains(".") ? r.Location.IndexOf(".") + 1 : 0;
-                    string loc = r.Location.Substring(idx + 1, r.Location.Length - (idx + 1)).Trim();
-                    var lokasiId = await FindLokasiIdAsync(loc);
+                    var lokasiId = await FindLokasiIdAsync(ExtractLocationName(r.Location));
                     if (lokasiId == null)
                     {
-                        _logger.LogWarning($"Unknown lokasi '{r.Location}' in TRX; skipping row.");
+                        result.Warnings.Add($"Unknown lokasi '{r.Location}' di TRX; skipping.");
                         continue;
                     }
 
-                    var trx = new TRX
+                    trxList.Add(new TRX
                     {
                         Bulan = new DateTime(r.Month.Year, r.Month.Month, 1),
                         LokasiId = lokasiId,
                         Trx = r.Value
-                    };
-                    _db.TRX.Add(trx);
+                    });
                 }
-            }
-            else
-            {
-                result.Warnings.Add("TRX sheet not found.");
+
+                var (validTrx, trxWarnings) = ValidateTrx(trxList);
+                result.Warnings.AddRange(trxWarnings);
+                _db.TRX.AddRange(validTrx);
             }
 
-            // 3. Parse NPP sheet
-            var nppSheet = workbook.Worksheets.FirstOrDefault(ws => string.Equals(ws.Name, "18", StringComparison.OrdinalIgnoreCase));
+            // 3. Proses NPP
+            var nppSheet = workbook.Worksheets.FirstOrDefault(ws => ws.Name.Trim() == "18");
             if (nppSheet != null)
             {
                 var nppRows = ReadSheetForValues(nppSheet);
+                var nppList = new List<NPP>();
+
                 foreach (var r in nppRows)
                 {
-                    int idx = r.Location.Contains(".") ? r.Location.IndexOf(".") + 1 : 0;
-                    string loc = r.Location.Substring(idx + 1, r.Location.Length - (idx + 1)).Trim();
-                    var lokasiId = await FindLokasiIdAsync(loc);
+                    var lokasiId = await FindLokasiIdAsync(ExtractLocationName(r.Location));
                     if (lokasiId == null)
                     {
-                        _logger.LogWarning($"Unknown lokasi '{r.Location}' in NPP; skipping row.");
+                        result.Warnings.Add($"Unknown lokasi '{r.Location}' di NPP; skipping.");
                         continue;
                     }
 
-                    var npp = new NPP
+                    nppList.Add(new NPP
                     {
                         Bulan = new DateTime(r.Month.Year, r.Month.Month, 1),
                         LokasiId = lokasiId,
                         Npp = r.Value
-                    };
-                    _db.NPP.Add(npp);
+                    });
                 }
+
+                var (validNpp, nppWarnings) = ValidateNpp(nppList);
+                result.Warnings.AddRange(nppWarnings);
+                _db.NPP.AddRange(validNpp);
             }
             else
             {
-                result.Warnings.Add("NPP sheet not found.");
+                result.Warnings.Add("Sheet '18' untuk NPP tidak ditemukan.");
             }
 
             await _db.SaveChangesAsync();
@@ -109,10 +109,10 @@ namespace ExcelEtlApp.Services
 
         private async Task ImportLokasi(ExcelWorksheet ws)
         {
-            // parse categories in column A like 'a. Jawa' and locations in column B
             string? currentPrefix = null;
             int counter = 0;
-            int startRow = 4; // as in your sample
+            int startRow = 4;
+
             for (int r = startRow; r <= ws.Dimension.End.Row; r++)
             {
                 var a = ws.Cells[r, 1].Text?.Trim();
@@ -120,7 +120,6 @@ namespace ExcelEtlApp.Services
 
                 if (!string.IsNullOrEmpty(a) && a.Contains('.'))
                 {
-                    // new prefix like 'a.' -> 'a'
                     currentPrefix = a.Split('.')[0].Trim();
                     counter = 0;
                     continue;
@@ -131,12 +130,9 @@ namespace ExcelEtlApp.Services
                     counter++;
                     var id = $"{currentPrefix}{counter}";
 
-                    var exists = await _db.Lokasi.AnyAsync(x => x.Id == id);
-                    if (!exists)
+                    if (!await _db.Lokasi.AnyAsync(x => x.Id == id))
                     {
-                        int idx = b.Contains(".") ? b.IndexOf(".") + 1 : 0;
-                        b = b.Substring(idx + 1, b.Length - (idx + 1)).Trim();
-                        _db.Lokasi.Add(new Lokasi { Id = id, Nama = b });
+                        _db.Lokasi.Add(new Lokasi { Id = id, Nama = ExtractLocationName(b) });
                     }
                 }
             }
@@ -148,15 +144,17 @@ namespace ExcelEtlApp.Services
         {
             if (string.IsNullOrWhiteSpace(lokasiNameOrId)) return null;
 
-            // direct match to id
             var byId = await _db.Lokasi.FindAsync(lokasiNameOrId);
             if (byId != null) return byId.Id;
 
-            // match by name (case-insensitive)
             var byName = await _db.Lokasi.FirstOrDefaultAsync(l => l.Nama.ToLower() == lokasiNameOrId.ToLower());
-            if (byName != null) return byName.Id;
+            return byName?.Id;
+        }
 
-            return null;
+        private string ExtractLocationName(string raw)
+        {
+            int idx = raw.Contains(".") ? raw.IndexOf(".") + 1 : 0;
+            return raw.Substring(idx).Trim();
         }
 
         private record SheetRow(string Location, DateTime Month, long Value);
@@ -164,36 +162,32 @@ namespace ExcelEtlApp.Services
         private List<SheetRow> ReadSheetForValues(ExcelWorksheet ws)
         {
             var list = new List<SheetRow>();
-            // header row determination: assume row 3 has month headers
             int headerRow = 2;
             int firstDataRow = 4;
-            int firstDataCol = 3; // months start at column C per your sample
+            int firstDataCol = 3;
             int lastCol = ws.Dimension.End.Column;
             int lastRow = ws.Dimension.End.Row;
 
-            // read month headers from headerRow
             var months = new Dictionary<int, DateTime>();
             for (int c = firstDataCol; c <= lastCol; c++)
             {
                 var header = ws.Cells[headerRow, c].Text?.Trim();
-                if (string.IsNullOrEmpty(header)) continue;
-                var parsed = ParseMonthFromHeader(header);
-                months[c] = parsed;
+                if (!string.IsNullOrEmpty(header))
+                    months[c] = ParseMonthFromHeader(header);
             }
 
             for (int r = firstDataRow; r <= lastRow; r++)
             {
                 var lokasiCell = ws.Cells[r, 2].Text?.Trim();
-                if (string.IsNullOrEmpty(lokasiCell)) continue;
-                if (lokasiCell.Equals("JUMLAH", StringComparison.OrdinalIgnoreCase)) break;
+                if (string.IsNullOrEmpty(lokasiCell) || lokasiCell.Equals("JUMLAH", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
                 for (int c = firstDataCol; c <= lastCol; c++)
                 {
                     if (!months.ContainsKey(c)) continue;
-                    var cell = ws.Cells[r, c].Text?.Trim();
-                    if (string.IsNullOrEmpty(cell)) continue;
-                    var val = ParseLongSafe(cell);
-                    list.Add(new SheetRow(lokasiCell, months[c], val));
+                    var valText = ws.Cells[r, c].Text?.Trim();
+                    if (string.IsNullOrEmpty(valText)) continue;
+                    list.Add(new SheetRow(lokasiCell, months[c], ParseLongSafe(valText)));
                 }
             }
 
@@ -203,9 +197,8 @@ namespace ExcelEtlApp.Services
         private DateTime ParseMonthFromHeader(string header)
         {
             var tokens = header.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var t in tokens)
+            foreach (var s in tokens)
             {
-                var s = t.Trim();
                 if (s.Contains('/'))
                 {
                     var parts = s.Split('/');
@@ -215,27 +208,91 @@ namespace ExcelEtlApp.Services
                         return new DateTime(year, m, 1);
                     }
                 }
-                if (DateTime.TryParseExact(s, new[] { "MMM yyyy", "MMMM yyyy", "MM/yyyy", "M/yyyy", "MM-yyyy", "M-yyyy", "MM-yy", "M-yy", "MMM-yy" }, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+                if (DateTime.TryParseExact(s,
+                    new[] { "MMM yyyy", "MMMM yyyy", "MM/yyyy", "M/yyyy", "MM-yyyy", "M-yyyy", "MM-yy", "M-yy", "MMM-yy" },
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
                 {
                     return new DateTime(dt.Year, dt.Month, 1);
                 }
             }
-
-            var now = DateTime.Now;
-            return new DateTime(now.Year, now.Month, 1);
+            return new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
         }
 
         private long ParseLongSafe(string s)
         {
             var cleaned = new string(s.Where(c => char.IsDigit(c) || c == '-').ToArray());
-            if (long.TryParse(cleaned, out var v)) return v;
-            return 0;
+            return long.TryParse(cleaned, out var v) ? v : 0;
+        }
+
+        private (List<TRX>, List<string>) ValidateTrx(List<TRX> records)
+        {
+            var logs = new List<string>();
+            var valid = new List<TRX>();
+
+            // LEFT JOIN ke Lokasi untuk ambil nama
+            var recordsWithName = from r in records
+                                  join l in _db.Lokasi on r.LokasiId equals l.Id into lj
+                                  from l in lj.DefaultIfEmpty()
+                                  select new { Rec = r, LokasiName = l != null ? l.Nama : r.LokasiId };
+
+            var groups = recordsWithName.GroupBy(x => x.LokasiName);
+            foreach (var g in groups)
+            {
+                var ordered = g.OrderBy(x => x.Rec.Bulan).ToList();
+                TRX? prev = null;
+                foreach (var item in ordered)
+                {
+                    var rec = item.Rec;
+                    if (prev != null && rec.Trx <= prev.Trx)
+                    {
+                        prev = rec;
+                        logs.Add($"TRX validation failed for {item.LokasiName} at {rec.Bulan:yyyy-MM}: {rec.Trx} <= {prev.Trx}");
+                        continue;
+                    }
+                    valid.Add(rec);
+                    prev = rec;
+                }
+            }
+
+            return (valid, logs);
+        }
+
+        private (List<NPP>, List<string>) ValidateNpp(List<NPP> records)
+        {
+            var logs = new List<string>();
+            var valid = new List<NPP>();
+
+            var recordsWithName = from r in records
+                                  join l in _db.Lokasi on r.LokasiId equals l.Id into lj
+                                  from l in lj.DefaultIfEmpty()
+                                  select new { Rec = r, LokasiName = l != null ? l.Nama : r.LokasiId };
+
+            var groups = recordsWithName.GroupBy(x => x.LokasiName);
+            foreach (var g in groups)
+            {
+                var ordered = g.OrderBy(x => x.Rec.Bulan).ToList();
+                NPP? prev = null;
+                foreach (var item in ordered)
+                {
+                    var rec = item.Rec;
+                    if (prev != null && rec.Npp < prev.Npp)
+                    {
+                        prev = rec;
+                        logs.Add($"NPP validation failed for {item.LokasiName} at {rec.Bulan:yyyy-MM}: {rec.Npp} < {prev.Npp}");
+                        continue;
+                    }
+                    valid.Add(rec);
+                    prev = rec;
+                }
+            }
+
+            return (valid, logs);
         }
     }
 
     public class EtlResult
     {
-        public bool Success { get; set; } = false;
+        public bool Success { get; set; }
         public List<string> Errors { get; } = new();
         public List<string> Warnings { get; } = new();
         public bool HasErrors => Errors.Any();
