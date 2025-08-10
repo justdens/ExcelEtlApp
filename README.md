@@ -1,7 +1,7 @@
 # ExcelETLApp (TRX & NPP)
 
-## Prasyarat
-- .NET 7 SDK
+## Prerequisites
+- .NET 8.0 SDK
 - Visual Studio 2022 / VS Code
 - PostgreSQL
 
