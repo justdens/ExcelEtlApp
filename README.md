@@ -1,4 +1,4 @@
-# ExcelETLApp (TRX & NPP)
+# ExcelEtlApp (TRX & NPP)
 
 ## Prerequisites
 - .NET 8.0 SDK
