@@ -1,0 +1,48 @@
+﻿@{
+    ViewData["Title"] = "Upload Excel";
+}
+
+<h2>Upload Excel</h2>
+
+<form asp-action="Index" method="post" enctype="multipart/form-data">
+    <div class="mb-3">
+        <input type="file" name="file" class="form-control" />
+    </div>
+    <button class="btn btn-primary" type="submit">Upload & Run ETL</button>
+</form>
+
+@if (ViewBag.Message != null)
+{
+    <div class="alert alert-info mt-3">@ViewBag.Message</div>
+}
+
+@if (ViewBag.Success != null)
+{
+    <div class="alert alert-success mt-3">ETL Success: @ViewBag.Success</div>
+}
+
+@if (ViewBag.Errors != null)
+{
+    <div class="alert alert-danger mt-3">
+        <h5>Errors</h5>
+        <ul>
+            @foreach (var e in (List<string>)ViewBag.Errors)
+            {
+                <li>@e</li>
+            }
+        </ul>
+    </div>
+}
+
+@if (ViewBag.Warnings != null)
+{
+    <div class="alert alert-warning mt-3">
+        <h5>Warnings</h5>
+        <ul>
+            @foreach (var w in (List<string>)ViewBag.Warnings)
+            {
+                <li>@w</li>
+            }
+        </ul>
+    </div>
+}
