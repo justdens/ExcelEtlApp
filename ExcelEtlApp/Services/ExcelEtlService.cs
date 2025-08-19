@@ -244,9 +244,9 @@ namespace ExcelEtlApp.Services
                 {
                     var rec = item.Rec;
                     if (prev != null && rec.Trx <= prev.Trx)
-                    {
-                        prev = rec;
+                    {                        
                         logs.Add($"TRX validation failed for {item.LokasiName} at {rec.Bulan:yyyy-MM}: {rec.Trx} <= {prev.Trx}");
+                        prev = rec;
                         continue;
                     }
                     valid.Add(rec);
@@ -276,9 +276,9 @@ namespace ExcelEtlApp.Services
                 {
                     var rec = item.Rec;
                     if (prev != null && rec.Npp < prev.Npp)
-                    {
-                        prev = rec;
+                    {                        
                         logs.Add($"NPP validation failed for {item.LokasiName} at {rec.Bulan:yyyy-MM}: {rec.Npp} < {prev.Npp}");
+                        prev = rec;
                         continue;
                     }
                     valid.Add(rec);
